@@ -49,29 +49,29 @@ def _position_encoding(height: int, width: int, channels: int, device):
     return encoding[0]
 
 
-class _LiftSplatProjector(nn.Module):
+class LiftSplatProjector(nn.Module):
     def __init__(
         self,
         *,
         img_height: int = 294,
         img_width: int = 518,
-        bev_height: int = 128,
-        bev_width: int = 128,
-        voxel_height: int = 8,
-        voxel_size: Tuple[float, float, float] = (0.5, 0.5, 1.0),
-        voxel_origin: Tuple[float, float, float] = (-32.0, -32.0, -4.0),
+        bev_h: int = 128,
+        bev_w: int = 128,
+        voxel_z: int = 8,
+        dx: Tuple[float, float, float] = (0.5, 0.5, 1.0),
+        bx: Tuple[float, float, float] = (-32.0, -32.0, -4.0),
         feature_channels: int = 128,
         use_transformer: bool = True,
     ):
         super().__init__()
-        self.img_height = img_height
-        self.img_width = img_width
-        self.bev_height = bev_height
-        self.bev_width = bev_width
-        self.voxel_height = voxel_height
-        self.feature_channels = feature_channels
-        self.register_buffer("dx", torch.tensor(voxel_size).view(1, 1, 3))
-        self.register_buffer("bx", torch.tensor(voxel_origin).view(1, 1, 3))
+        self.H = img_height
+        self.W = img_width
+        self.bev_h = bev_h
+        self.bev_w = bev_w
+        self.voxel_z = voxel_z
+        self.C = feature_channels
+        self.register_buffer("dx", torch.tensor(dx).view(1, 1, 3))
+        self.register_buffer("bx", torch.tensor(bx).view(1, 1, 3))
         self.depth_min = 1.0
         self.depth_max = 50.0
 
@@ -99,52 +99,52 @@ class _LiftSplatProjector(nn.Module):
             )
             self.bev_trans = nn.TransformerEncoder(layer, num_layers=2)
 
-        self._frustum_cache = {}
+        self._frustum = {}
 
     def train(self, mode: bool = True):
         super().train(mode)
         self.backbone.eval()
         return self
 
-    def _make_frustum(self, device, feature_height: int, feature_width: int):
-        key = (device, feature_height, feature_width)
-        if key not in self._frustum_cache:
-            scale_x = self.img_width / feature_width
-            scale_y = self.img_height / feature_height
-            x = (torch.arange(feature_width, device=device) + 0.5) * scale_x
-            y = (torch.arange(feature_height, device=device) + 0.5) * scale_y
+    def _make_frustum(self, *, device, Hf: int, Wf: int):
+        key = (device, Hf, Wf)
+        if key not in self._frustum:
+            scale_x = self.W / Wf
+            scale_y = self.H / Hf
+            x = (torch.arange(Wf, device=device) + 0.5) * scale_x
+            y = (torch.arange(Hf, device=device) + 0.5) * scale_y
             x, y = torch.meshgrid(x, y, indexing="xy")
-            self._frustum_cache[key] = torch.stack(
+            self._frustum[key] = torch.stack(
                 (x, y, torch.ones_like(x), torch.ones_like(x)), dim=-1
             ).reshape(-1, 4)
-        return self._frustum_cache[key]
+        return self._frustum[key]
 
     def _voxel_pool(self, xyz, features, batch_size: int):
         cameras_per_batch, channels, point_count = features.shape
         dx = self.dx.to(xyz.device, xyz.dtype)
         bx = self.bx.to(xyz.device, xyz.dtype)
 
-        half_x = self.bev_height * dx[0, 0, 0] / 2
-        half_y = self.bev_width * dx[0, 0, 1] / 2
+        half_x = self.bev_h * dx[0, 0, 0] / 2
+        half_y = self.bev_w * dx[0, 0, 1] / 2
         row = ((half_x - xyz[..., 0]) / dx[0, 0, 0]).round().long()
         col = ((half_y - xyz[..., 1]) / dx[0, 0, 1]).round().long()
         height = ((xyz[..., 2] - bx[0, 0, 2]) / dx[0, 0, 2]).round().long()
 
         valid = (
             (row >= 0)
-            & (row < self.bev_height)
+            & (row < self.bev_h)
             & (col >= 0)
-            & (col < self.bev_width)
+            & (col < self.bev_w)
             & (height >= 0)
-            & (height < self.voxel_height)
+            & (height < self.voxel_z)
         )
         if not valid.any():
             return features.new_zeros(
                 batch_size,
                 channels,
-                self.voxel_height,
-                self.bev_height,
-                self.bev_width,
+                self.voxel_z,
+                self.bev_h,
+                self.bev_w,
             )
 
         pooled_features = features.permute(0, 2, 1)[valid]
@@ -156,12 +156,12 @@ class _LiftSplatProjector(nn.Module):
             // (cameras_per_batch // batch_size)
         )
         linear_index = (
-            ((batch * self.voxel_height + height) * self.bev_height + row)
-            * self.bev_width
+            ((batch * self.voxel_z + height) * self.bev_h + row)
+            * self.bev_w
             + col
         )
         output_size = (
-            batch_size * self.voxel_height * self.bev_height * self.bev_width
+            batch_size * self.voxel_z * self.bev_h * self.bev_w
         )
         volume = scatter_add(
             pooled_features,
@@ -177,9 +177,9 @@ class _LiftSplatProjector(nn.Module):
         ).clamp_min(1).unsqueeze(-1)
         volume = (volume / counts).view(
             batch_size,
-            self.voxel_height,
-            self.bev_height,
-            self.bev_width,
+            self.voxel_z,
+            self.bev_h,
+            self.bev_w,
             channels,
         )
         return volume.permute(0, 4, 1, 2, 3)
@@ -209,7 +209,7 @@ class _LiftSplatProjector(nn.Module):
 
         point_count = feature_height * feature_width
         frustum = self._make_frustum(
-            images.device, feature_height, feature_width
+            device=images.device, Hf=feature_height, Wf=feature_width
         )
         flat_intrinsics = intrinsics.reshape(flat_batch, 3, 3)
         focal_x = flat_intrinsics[:, 0, 0]
@@ -236,7 +236,7 @@ class _LiftSplatProjector(nn.Module):
 
         bev = self._voxel_pool(
             ego_xyz,
-            features.reshape(flat_batch, self.feature_channels, point_count),
+            features.reshape(flat_batch, self.C, point_count),
             batch_size,
         ).max(dim=2).values
 
@@ -245,13 +245,13 @@ class _LiftSplatProjector(nn.Module):
             position = _position_encoding(
                 bev_height,
                 bev_width,
-                self.feature_channels,
+                self.C,
                 bev.device,
             )
             tokens = bev.flatten(2).transpose(1, 2) + position
             bev = self.bev_trans(tokens).transpose(1, 2).reshape(
                 batch_size,
-                self.feature_channels,
+                self.C,
                 bev_height,
                 bev_width,
             )
@@ -285,13 +285,16 @@ class UniDepthLSS(nn.Module):
         **projector_kwargs,
     ):
         super().__init__()
-        self.projector = _LiftSplatProjector(
+        self.projector = LiftSplatProjector(
             img_height=img_height,
             img_width=img_width,
             feature_channels=feature_channels,
             **projector_kwargs,
         )
         self.seg = _SegmentationHead(feature_channels, num_classes)
+
+    def freeze_backbone(self, freeze: bool = True):
+        self.projector.backbone.requires_grad_(not freeze)
 
     def initialize_head_bias(self, bias: float = -2.19):
         nn.init.constant_(self.seg.net[-1].bias, bias)
