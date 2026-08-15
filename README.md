@@ -37,6 +37,14 @@ The following figure presents qualitative BEV vehicle segmentation results on nu
   <em>Qualitative comparison between ground-truth and predicted BEV vehicle maps on nuScenes.</em>
 </p>
 
+
+##  Pre-trained Weights
+
+Pre-trained weights for **UniDepth-LSS** are available here:
+
+👉 [Download Pre-trained Weights (v1.0)](https://github.com/adeelmhr/UniDepth-LSS/releases/tag/v1.0)
+
+
 ## Acknowledgements
 
 This work builds upon ideas and implementations from the following repositories:
