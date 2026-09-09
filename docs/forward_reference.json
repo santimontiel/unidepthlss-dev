@@ -1,0 +1,45 @@
+{
+  "seed": 42,
+  "device": "cpu",
+  "dtype": "float32",
+  "img_size": [
+    154,
+    266
+  ],
+  "batch_size": 1,
+  "num_cameras": 6,
+  "param_count_total": 355238724,
+  "param_count_trainable": 2813633,
+  "shapes": {
+    "projector.feat_adapter": [
+      6,
+      11,
+      19,
+      128
+    ],
+    "projector.bev_trans": [
+      1,
+      16384,
+      128
+    ],
+    "seg": [
+      1,
+      1,
+      128,
+      128
+    ],
+    "output": [
+      1,
+      1,
+      128,
+      128
+    ]
+  },
+  "digests": {
+    "projector.feat_adapter": "3d1e216dc8b8a2e78847c2f242d0d5cda8b18d48ad124c93d43f511bd2e1b783",
+    "projector.bev_trans": "eff2c9b3889707c74f25fc4be6104a205d4d58f98f1fc535c5f507e38565f1af",
+    "seg": "a5785d377f80cf8c4ef153bc926094bd09d930525798b3c97e0b90b5b4e68c07",
+    "output": "a5785d377f80cf8c4ef153bc926094bd09d930525798b3c97e0b90b5b4e68c07"
+  },
+  "backbone_eval_after_train_call": true
+}

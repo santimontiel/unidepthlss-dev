@@ -1,3 +1,11 @@
+"""Qualitative BEV figures. Moved from the released `visualization.py`.
+
+Every `.numpy()` call here is preceded by `.float()`. NumPy has no bfloat16 dtype, so with
+`trainer.precision: bf16-mixed` these lines raise `TypeError` rather than silently degrading --
+and a forward-only precision probe never reaches them, because only preview/logging code calls
+`.numpy()` on a model output. This was a live hazard in the released file.
+"""
+
 from __future__ import annotations
 
 import random
@@ -139,9 +147,12 @@ def visualize_random_sample(
         intrinsics.unsqueeze(0).to(device),
         extrinsics.unsqueeze(0).to(device),
     )
-    probability = logits.sigmoid()[0, 0].cpu().numpy()
+    # .float() before .numpy(): NumPy has no bfloat16 dtype, so under bf16-mixed autocast
+    # this line raises rather than returning a wrong value. A forward-only precision probe
+    # does not catch it -- only code that actually renders a preview does.
+    probability = logits.float().sigmoid()[0, 0].cpu().numpy()
     prediction = probability >= threshold
-    ground_truth = target[0].numpy().astype(bool)
+    ground_truth = target[0].float().numpy().astype(bool)
 
     bev_size = ground_truth.shape[0]
     half_range = bev_size * bev_resolution / 2
@@ -174,7 +185,7 @@ def visualize_random_sample(
     for axis, camera_index, title in zip(
         axes[:2].flat, camera_order, camera_titles
     ):
-        axis.imshow(images[camera_index].permute(1, 2, 0).numpy())
+        axis.imshow(images[camera_index].float().permute(1, 2, 0).numpy())
         axis.set_title(title)
         axis.axis("off")
 

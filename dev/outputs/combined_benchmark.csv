@@ -1,0 +1,7 @@
+timestamp,precision,eager_ms,eager_ms_std,eager_hz,eager_hz_std,eager_mem_mb,compiled_ms,compiled_ms_std,compiled_hz,compiled_hz_std,compiled_mem_mb,speedup_pct,note
+2026-09-09T16:15:33,fp32,280.794,0.157,3.6,0.0,5976.6,,,,,,,compile_stages empty -- nothing to compare
+2026-09-09T16:15:33,bf16,116.87,0.038,8.6,0.0,5663.9,,,,,,,compile_stages empty -- nothing to compare
+2026-09-09T16:22:20,fp32,281.064,0.08,3.6,0.0,5976.6,267.092,0.323,3.7,0.0,3665.4,5.0,
+2026-09-09T16:22:20,bf16,,,,,,,,,,,,skipped (bf16-unsafe stage(s): ['backbone'])
+2026-09-09T16:30:44,fp32,281.205,0.312,3.6,0.0,5976.6,266.956,0.198,3.7,0.0,3665.4,5.1,
+2026-09-09T16:30:44,bf16,116.872,0.016,8.6,0.0,5663.9,94.104,0.047,10.6,0.0,3153.0,19.5,

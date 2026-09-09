@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# uv / venv
+.venv/
+uv.lock
+
+# Run artifacts. Leading slash on purpose: an unanchored `outputs/` also matches at any depth,
+# which would silently swallow dev/outputs/ (the compile-sweep deliverable).
+/outputs/
+/logs/
+/wandb/
+/.cache/
+/eval_results.json
+
+# Curated checkpoints are copied here by hand and are far too large to track.
+/checkpoints/
+
+# Papers kept locally for reference, not redistributed.
+/.papers/
+
+# Local editor/tooling state
+.idea/
+.vscode/

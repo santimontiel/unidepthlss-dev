@@ -1,0 +1,43 @@
+defaults:
+  # The BEV window. `standard` (200x200 @ 100 m) is the default because it is the only setting
+  # comparable to the paper's Table 1 baselines. Override with `data/bev=paper` to reproduce the
+  # released 128x128 @ 64 m number. See configs/data/bev/*.yaml.
+  - bev: standard
+
+_target_: unidepthlss.data.datamodule.NuScenesDataModule
+
+# Resolves to the real host path when NUSCENES_DATA_ROOT is exported (running directly on a
+# host), and falls back to the fixed in-container mount the Makefile targets otherwise -- the
+# Makefile mounts the host path there but does not forward the variable itself.
+dataroot: ${oc.env:NUSCENES_DATA_ROOT,/data/nuscenes}
+version: v1.0-trainval
+
+# `store` reads the sibling repos' existing offline nuScenes store plus the small calibration
+# sidecar from tools/build_calibration_sidecar.py; `devkit` reads nuScenes live through the
+# devkit. dev/check_dataset_parity.py proves the two produce identical images, intrinsics,
+# extrinsics, segmentation and visibility, so this is a pure memory/throughput choice: the
+# devkit forks an ~8 GB in-memory index into every dataloader worker.
+source: store
+store_dir: null              # null -> <dataroot>/store_det2d
+calibration_sidecar: null    # null -> <dataroot>/unidepthlss_calibration.npz
+
+# 448x798 is the paper's high-resolution setting: the closest multiple of the ViT-L/14 patch
+# size to the 448x800 the baselines report. The low-resolution setting is 224x476 (vs 224x480).
+# NOTE the released script/train.ipynb used 294x518, which is neither -- see CLAUDE.md.
+img_size:
+  h: 448
+  w: 798
+
+grid: ${data.bev}
+
+batch_size: ${trainer.batch_size}
+# 8 is only safe because `source: store` removed the devkit from the worker processes. Drop to
+# 2 if you switch to `source: devkit` -- see the note above and check `free -h` first.
+num_workers: 8
+pin_memory: true
+persistent_workers: true
+prefetch_factor: 4
+augment_train: true
+debug_mode: ${debug_mode}
+
+dataset_name: nuscenes

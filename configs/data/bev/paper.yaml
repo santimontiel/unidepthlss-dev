@@ -1,0 +1,24 @@
+# @package data
+# The window the released code and the published numbers actually used: 128 x 128 at 0.5 m,
+# i.e. 64 x 64 m (+/-32 m).
+#
+# Select this ONLY to reproduce the paper's own IoU (49.4 unfiltered / 52.8 filtered at
+# 448x798). It is NOT comparable to the paper's Table 1 baselines, which all report over the
+# 100 x 100 m window in standard.yaml: this covers 41% of that area and excludes the 32-50 m
+# ring, where camera-only depth degrades most and vehicles are small, distant and often
+# occluded. Those vehicles leave both the true positives and the false negatives, which inflates
+# IoU. Running the same weights under both windows is what quantifies the gap -- see
+# tools/eval.py and docs/baseline.md.
+bev:
+  _target_: unidepthlss.geometry.BevGrid
+  h: 128
+  w: 128
+  h_meters: 64.0
+  w_meters: 64.0
+  z_min: -4.0
+  z_max: 4.0
+  voxel_z: 8
+
+# The released hardcoded value (Model/model.py: `self.depth_max = 50.0`). Comfortably beyond the
+# 32 m this window needs, so it never binds here.
+depth_max: 50.0

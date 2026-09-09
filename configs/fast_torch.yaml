@@ -1,0 +1,34 @@
+# Companion config for dev/compile_bf16_sweep.py. Composes the same data/module/task groups as
+# training so `instantiate_model(cfg)` builds the real model, at the real BEV window.
+defaults:
+  - _self_
+  - data: nuscenes.yaml
+  - module: unidepthlss.yaml
+  - task: vehicle.yaml
+
+task_name: "fast_torch"
+
+# Real head weights, so the sweep measures the shipped model rather than random init.
+checkpoint_path: null
+device: "cuda:0"
+seed: 42
+debug_mode: false
+
+num_cameras: 6
+num_warmup_iters: 10
+num_iters: 50
+# Per-stage numbers near the 20%/10% decision thresholds are noisy enough to flip a stage's
+# classification between otherwise-identical runs; classify from the mean across repeats.
+num_repeats: 3
+
+compile_mode: "default"
+compile_stages: null
+
+trainer:
+  batch_size: 1
+
+output_dir: "${hydra:runtime.cwd}/dev/outputs"
+
+hydra:
+  run:
+    dir: "outputs/${task_name}/${now:%Y-%m-%d_%H-%M-%S}"

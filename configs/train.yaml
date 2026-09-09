@@ -1,0 +1,75 @@
+defaults:
+  - _self_
+  - data: nuscenes.yaml
+  - module: unidepthlss.yaml
+  - task: vehicle.yaml
+  - logger: wandb.yaml
+
+task_name: "train"
+# Single source of truth for this run's timestamp -- referenced by hydra.run.dir below and by
+# configs/logger/*.yaml. Never call ${now:...} a second time anywhere in a run's config tree:
+# two separate interpolations can resolve to different values across a second boundary, which
+# would desync the output folder from the logger's run name.
+run_id: "${now:%Y-%m-%d_%H-%M-%S}"
+debug_mode: false
+seed: 42
+resume_checkpoint: null
+
+# torch.compile: comma-separated subset of COMPILE_SAFE_STAGES in tools/train.py, or "none".
+# Quote multi-stage values on the CLI (compile_stages='backbone,bev_trans') -- Hydra reads a bare
+# comma as list syntax.
+#
+# `backbone` only, from the measured sweep (dev/outputs/results.html, 3 repeats, 448x798, batch 1,
+# 200x200 grid, RTX 5090). Under bf16 -- the precision this trains at -- compiling it is
+# +19.52% (sd 0.10) whole-model, 116.872 -> 94.104 ms/sample, 8.6 -> 10.6 Hz, and peak memory
+# 5663.9 -> 3153.0 MB (-44%). Every other stage regresses: bev_trans is 35.7% of the fp32 pass but
+# only 11.5% under bf16 and gains 0.57%; feat_adapter/seg/lift_to_ego/voxel_pool are all under
+# 0.3% of the pass, where compile overhead dominates.
+#
+# Note `backbone` compiles `projector.backbone.encode_decode`, NOT the backbone module --
+# LiftSplatProjector calls that method directly, so compiling the module is a silent no-op.
+compile_stages: "backbone"
+compile_mode: "default"  # only "default" is stable once more than one stage is compiled
+
+trainer:
+  accelerator: "cuda"
+  devices: 1
+  # The frozen backbone means some parameters never receive gradients, which plain "ddp" treats
+  # as an error. Required regardless of strict_freeze: the UniDepth decoder head runs under
+  # no_grad and is never in the graph.
+  strategy: "ddp_find_unused_parameters_true"
+  max_epochs: 30
+  # bf16-mixed, never "bf16": the latter is a dead string in some Lightning versions' precision
+  # matching and silently falls back to fp32. This replaces the released fp16 + GradScaler.
+  precision: "bf16-mixed"
+  batch_size: 2
+  gradient_clip_val: 1.0
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  num_sanity_val_steps: 0
+
+callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    # Scoped to this run's own output dir. A fixed shared path makes Lightning's collision
+    # handling pile up -v1/-v2 checkpoints across debug runs, unbounded.
+    dirpath: "${hydra:runtime.output_dir}/checkpoints"
+    monitor: "val/metrics/${task.checkpoint_metric}"
+    filename: "best"
+    save_top_k: 1
+    mode: "max"
+    save_last: true
+
+  - _target_: lightning.pytorch.callbacks.LearningRateMonitor
+    logging_interval: "epoch"
+
+  - _target_: lightning.pytorch.callbacks.RichModelSummary
+    max_depth: 2
+
+  - _target_: lightning.pytorch.callbacks.TQDMProgressBar
+    refresh_rate: 50
+
+# Unified per-run artifact folder: the .hydra/ config snapshot, train.log, checkpoints/ and
+# whichever logger(s) are active all nest under this one directory.
+hydra:
+  run:
+    dir: "outputs/${task_name}/${run_id}"

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>torch.compile / bf16-mixed sweep results</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --gridline: #e1e0d9; --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; padding: 2rem 1.5rem 4rem;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 0.75rem; }
+  p.sub { color: var(--text-secondary); margin-top: 0; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--gridline); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+  .stage-row { display: grid; grid-template-columns: 220px 1fr 1fr 220px; align-items: center; gap: 0.5rem; padding: 0.4rem 0; }
+  .stage-name { font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { background: var(--gridline); border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-eager { background: color-mix(in srgb, var(--series-1) 40%, var(--surface-1)); }
+  .bar-compiled { background: var(--series-1); }
+  .stage-value { font-size: 0.78rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { font-size: 0.65rem; padding: 0.05rem 0.4rem; border-radius: 6px; margin-left: 0.35rem; font-weight: 600; }
+  .badge-good { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+  .badge-warning { background: color-mix(in srgb, var(--warning) 25%, transparent); color: color-mix(in srgb, var(--warning) 70%, black); }
+  .badge-serious { background: color-mix(in srgb, var(--serious) 20%, transparent); color: var(--serious); }
+  .badge-critical { background: color-mix(in srgb, var(--critical) 20%, transparent); color: var(--critical); }
+  .badge-muted { background: var(--gridline); color: var(--text-muted); }
+  .status-good { color: var(--good); } .status-warning { color: color-mix(in srgb, var(--warning) 70%, black); }
+  .status-serious { color: var(--serious); } .status-critical { color: var(--critical); } .status-muted { color: var(--text-muted); }
+  code { background: var(--gridline); padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .stat-group { margin-top: 1.25rem; }
+  .stat-group:first-child { margin-top: 0.5rem; }
+  .stat-group-label { font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+  .stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
+  .stat-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 0.4rem; }
+  .stat-value { font-size: 1.6rem; font-weight: 600; font-variant-numeric: proportional-nums; }
+  .stat-range { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
+  .stat-delta { font-size: 0.78rem; margin-top: 0.3rem; font-weight: 600; }
+</style>
+</head>
+<body data-theme-root>
+<div class="wrap">
+  <h1>torch.compile / bf16-mixed sweep results</h1>
+  <p class="sub">Generated 2026-09-09T16:30:44</p>
+
+  <div class="stat-group">
+      <div class="stat-group-label">fp32-true</div>
+      <div class="stat-grid">
+        <div class="stat-tile"><div class="stat-label">Eager latency</div><div class="stat-value">281.20 ms/sample</div><div class="stat-range">± 0.31</div></div>
+        <div class="stat-tile"><div class="stat-label">Compiled latency</div><div class="stat-value">266.96 ms/sample</div><div class="stat-range">± 0.20</div><div class="stat-delta status-good">-5.1% vs eager</div></div>
+        <div class="stat-tile"><div class="stat-label">Eager throughput</div><div class="stat-value">3.6 Hz</div></div>
+        <div class="stat-tile"><div class="stat-label">Compiled throughput</div><div class="stat-value">3.7 Hz</div><div class="stat-delta status-good">+2.8% vs eager</div></div>
+      </div>
+    </div>
+<div class="stat-group">
+      <div class="stat-group-label">bf16-mixed</div>
+      <div class="stat-grid">
+        <div class="stat-tile"><div class="stat-label">Eager latency</div><div class="stat-value">116.87 ms/sample</div><div class="stat-range">± 0.02</div></div>
+        <div class="stat-tile"><div class="stat-label">Compiled latency</div><div class="stat-value">94.10 ms/sample</div><div class="stat-range">± 0.05</div><div class="stat-delta status-good">-19.5% vs eager</div></div>
+        <div class="stat-tile"><div class="stat-label">Eager throughput</div><div class="stat-value">8.6 Hz</div></div>
+        <div class="stat-tile"><div class="stat-label">Compiled throughput</div><div class="stat-value">10.6 Hz</div><div class="stat-delta status-good">+23.3% vs eager</div></div>
+      </div>
+    </div>
+
+  <h2>bf16-compatibility probe</h2>
+  <div class="card"><table><thead><tr><th>Stage</th><th>Result</th></tr></thead><tbody><tr><td>backbone</td><td class="status-critical">🔺 not observed (no tensor output captured)</td></tr>
+<tr><td>feat_adapter</td><td class="status-good">✅ ok</td></tr>
+<tr><td>lift_to_ego</td><td class="status-critical">🔺 not observed (no tensor output captured)</td></tr>
+<tr><td>voxel_pool</td><td class="status-critical">🔺 not observed (no tensor output captured)</td></tr>
+<tr><td>bev_trans</td><td class="status-good">✅ ok</td></tr>
+<tr><td>seg</td><td class="status-good">✅ ok</td></tr></tbody></table></div>
+
+  <h2>bf16-mixed</h2>
+        <div class="card">
+        <div class="stage-row">
+          <div class="stage-name">bev_trans <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:13.4%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:12.8%"></div></div>
+          <div class="stage-value">13.45ms → 12.78ms <span class="status-muted">(+5.0% (±0.7))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">seg <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.3%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.3%"></div></div>
+          <div class="stage-value">0.33ms → 0.26ms <span class="status-muted">(+21.7% (±13.1))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">feat_adapter <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.1%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:-0.1%"></div></div>
+          <div class="stage-value">0.09ms → -0.12ms <span class="status-muted">(+232.9% (±194.3))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">backbone <span class="badge badge-warning">⚠️ ask</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-warning">(–)</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">lift_to_ego <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-muted">(–)</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">voxel_pool <span class="badge badge-critical">🔺 regression</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-critical">(–)</span></div>
+        </div></div>
+<h2>fp32-true</h2>
+        <div class="card">
+        <div class="stage-row">
+          <div class="stage-name">bev_trans <span class="badge badge-critical">🔺 regression</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:100.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:100.0%"></div></div>
+          <div class="stage-value">100.03ms → 100.05ms <span class="status-critical">(-0.0% (±1.4))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">seg <span class="badge badge-critical">🔺 regression</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.4%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.9%"></div></div>
+          <div class="stage-value">0.37ms → 0.93ms <span class="status-critical">(-135.5% (±350.3))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">feat_adapter <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.1%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:-0.1%"></div></div>
+          <div class="stage-value">0.09ms → -0.09ms <span class="status-muted">(+205.9% (±626.1))</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">backbone <span class="badge badge-muted">– skip</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-muted">(–)</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">lift_to_ego <span class="badge badge-critical">🔺 regression</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-critical">(–)</span></div>
+        </div>
+        <div class="stage-row">
+          <div class="stage-name">voxel_pool <span class="badge badge-critical">🔺 regression</span></div>
+          <div class="bar-track"><div class="bar-fill bar-eager" style="width:0.0%"></div></div>
+          <div class="bar-track"><div class="bar-fill bar-compiled" style="width:0.0%"></div></div>
+          <div class="stage-value">0.00ms → 0.00ms <span class="status-critical">(–)</span></div>
+        </div></div>
+
+  <h2>Combined whole-model benchmark (chosen stages compiled together)</h2>
+  <p class="sub">Eager (nothing compiled) vs. every stage in compile_stages compiled as one configuration -- not a sum of the isolated per-stage numbers above (see whole_model_benchmark's docstring for why those two disagree).</p>
+  <div class="card"><table><thead><tr>
+    <th>Precision</th>
+    <th>Eager ms/sample</th><th>Eager Hz</th><th>Eager peak mem</th>
+    <th>Compiled ms/sample</th><th>Compiled Hz</th><th>Compiled peak mem</th>
+    <th>Speedup</th>
+  </tr></thead><tbody><tr>
+          <td>fp32</td>
+          <td>281.205±0.312 ms</td><td>3.6±0.0 Hz</td><td>5976.6 MB</td>
+          <td>266.956±0.198 ms</td><td>3.7±0.0 Hz</td><td>3665.4 MB</td>
+          <td class="status-good">+5.1%</td>
+        </tr>
+<tr>
+          <td>bf16</td>
+          <td>116.872±0.016 ms</td><td>8.6±0.0 Hz</td><td>5663.9 MB</td>
+          <td>94.104±0.047 ms</td><td>10.6±0.0 Hz</td><td>3153.0 MB</td>
+          <td class="status-good">+19.5%</td>
+        </tr></tbody></table></div>
+
+  <h2>Recommended Hydra config</h2>
+  <div class="card"><code>compile_stages=none</code></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Binary vehicle segmentation: nuScenes `vehicle.*`, i.e. car / truck / bus / trailer /
+# construction / motorcycle / bicycle / emergency. Matches the single-class definition the
+# baselines in the paper's Table 1 report against.
+key: vehicle
+
+# >40% visible. The evaluation reports both this and the unfiltered column in one pass, which is
+# what the paper's four settings need.
+min_visibility: 2
+checkpoint_metric: iou

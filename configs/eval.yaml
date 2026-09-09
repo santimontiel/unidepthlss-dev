@@ -1,0 +1,40 @@
+defaults:
+  - _self_
+  - data: nuscenes.yaml
+  - module: unidepthlss.yaml
+  - task: vehicle.yaml
+  - logger: csv.yaml
+
+task_name: "eval"
+run_id: "${now:%Y-%m-%d_%H-%M-%S}"
+debug_mode: false
+seed: 42
+
+# Required. A checkpoint from tools/train.py, or the authors' released v1.0 weights.
+checkpoint_path: null
+
+# Evaluate under both BEV windows in one invocation. This is the whole point of the eval tool:
+# the same weights scored over the released 64x64 m window and over the 100x100 m window the
+# paper's Table 1 baselines use, so the difference is measured rather than argued about.
+# Set to a single entry to evaluate only one.
+grids:
+  - paper
+  - standard
+
+# Stop after this many batches per window. null = the whole split. For smoke-testing the
+# plumbing before committing to a full 6,019-sample pass.
+limit: null
+
+compile_stages: "none"
+compile_mode: "default"
+
+trainer:
+  accelerator: "cuda"
+  devices: 1
+  precision: "bf16-mixed"
+  batch_size: 1
+  max_epochs: 1
+
+hydra:
+  run:
+    dir: "outputs/${task_name}/${run_id}"

@@ -1,0 +1,6 @@
+# @package loggers
+# No W&B: use this when $WANDB_API_KEY is not available, or for throwaway runs.
+- _target_: lightning.pytorch.loggers.CSVLogger
+  save_dir: "${hydra:runtime.output_dir}"
+  name: "csv"
+  version: ""

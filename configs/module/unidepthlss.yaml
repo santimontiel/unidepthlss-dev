@@ -1,0 +1,71 @@
+_target_: unidepthlss.modeling.module.UniDepthLSSModule
+
+model:
+  _target_: unidepthlss.modeling.model.UniDepthLSS
+  img_height: ${data.img_size.h}
+  img_width: ${data.img_size.w}
+  num_classes: 1
+  feature_channels: 128
+
+  # One definition, shared with the label rasterizer. See unidepthlss/geometry.py.
+  grid: ${data.bev}
+
+  depth_min: 1.0
+  # Carried by the BEV window, not set here: the clamp must reach the far edge of the grid or
+  # the outer ring is unreachable and reads as empty.
+  depth_max: ${data.depth_max}
+
+  use_transformer: true
+
+  # Route the BEV transformer through scaled_dot_product_attention instead of PyTorch's fused
+  # MultiheadAttention fastpath. The fastpath materializes the full attention matrix, and this
+  # transformer's sequence length is the BEV grid *area* -- 16,384 tokens at 128x128 but 40,000
+  # at 200x200. Measured on an RTX 5090 (448x798, batch 1, 200x200 grid, whole model):
+  #
+  #     fp32, fastpath on    27.48 GB     <- OOMs a 32 GB card in a real eval loop
+  #     fp32, fastpath off    6.28 GB
+  #     bf16, either          5.94 GB
+  #
+  # So true is what makes the comparable window runnable at full precision. It is NOT
+  # bit-identical to the release (SDPA reduces in a different order); set false for the exact
+  # released numerics. Measured IoU impact: see docs/baseline.md.
+  efficient_attention: true
+  backbone_name: lpiccinelli/unidepth-v2-vitl14
+
+  # TRUE here reproduces the training run that actually produced the released checkpoint, and
+  # it is NOT what the committed code does. Two separate facts:
+  #
+  #   1. UniDepth's DinoVisionTransformer.train() ends by unconditionally reassigning
+  #      requires_grad on cls_token, pos_embed and norm from its own frozen_stages/use_norm
+  #      fields, ignoring any external requires_grad_(False). Since .eval() routes through
+  #      train(False), the freeze in LiftSplatProjector.__init__ is reverted one line after it
+  #      is applied, leaving 1,405,952 backbone parameters trainable. The committed
+  #      script/train.ipynb builds its optimizer from `p for p in model.parameters() if
+  #      p.requires_grad`, so running the released code as committed trains 2,813,633
+  #      parameters -- including the ViT positional embedding.
+  #   2. The released checkpoint was not produced that way. Its optimizer state covers exactly
+  #      33 tensors / 1,407,681 elements (feat_adapter + bev_trans + seg) and its `format` field
+  #      reads "compact_without_frozen_backbone_v1". So the paper's 1.41M figure is correct for
+  #      the real run; the published *code* just does not reproduce it.
+  #
+  # true is therefore the honest default: it matches the run behind the numbers. Set false to
+  # reproduce the committed notebook's behaviour instead. Irrelevant to a forward pass, so
+  # evaluating a released checkpoint is unaffected either way.
+  # See LiftSplatProjector._enforce_freeze and dev/check_backbone_freeze.py.
+  strict_freeze: true
+
+losses:
+  _target_: unidepthlss.losses.SegmentationLoss
+  bce_weight: 1.0
+  dice_weight: 1.0
+
+# The released schedule, named explicitly in the paper: AdamW + cosine annealing to 1e-6.
+# Deliberately NOT the family's usual OneCycleLR -- see unidepthlss/modeling/module.py.
+lr: 3e-4
+weight_decay: 1e-4
+eta_min: 1e-6
+max_epochs: ${trainer.max_epochs}
+head_bias_init: -2.19
+
+iou_threshold: 0.5
+min_visibility: ${task.min_visibility}

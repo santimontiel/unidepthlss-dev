@@ -1,0 +1,11 @@
+# @package loggers
+- _target_: lightning.pytorch.loggers.wandb.WandbLogger
+  # Interpolated so the project name tracks the dataset and task actually selected, rather than
+  # drifting from them as a hardcoded string.
+  project: "unidepthlss_${data.dataset_name}_${task.key}"
+  name: "${run_id}"
+  save_dir: "${hydra:runtime.output_dir}"
+- _target_: lightning.pytorch.loggers.CSVLogger
+  save_dir: "${hydra:runtime.output_dir}"
+  name: "csv"
+  version: ""

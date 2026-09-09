@@ -1,0 +1,40 @@
+[
+  {
+    "grid": "paper",
+    "h": 128,
+    "w": 128,
+    "h_meters": 64.0,
+    "w_meters": 64.0,
+    "area_m2": 4096.0,
+    "depth_max": 50.0,
+    "iou": 0.49402130148377577,
+    "iou_visible": 0.5284557856321495,
+    "num_samples": 6019,
+    "num_val_samples": 6019,
+    "checkpoint": {
+      "kind": "released (model_state_dict)",
+      "path": "/home/santiago.montiel/Workspace/unidepthlss-dev/checkpoints/UniDepthLSS.pt",
+      "epoch": 10,
+      "val_iou": 0.4940255014051656
+    }
+  },
+  {
+    "grid": "standard",
+    "h": 200,
+    "w": 200,
+    "h_meters": 100.0,
+    "w_meters": 100.0,
+    "area_m2": 10000.0,
+    "depth_max": 61.0,
+    "iou": 0.18236845715559633,
+    "iou_visible": 0.19250694110619052,
+    "num_samples": 6019,
+    "num_val_samples": 6019,
+    "checkpoint": {
+      "kind": "released (model_state_dict)",
+      "path": "/home/santiago.montiel/Workspace/unidepthlss-dev/checkpoints/UniDepthLSS.pt",
+      "epoch": 10,
+      "val_iou": 0.4940255014051656
+    }
+  }
+]

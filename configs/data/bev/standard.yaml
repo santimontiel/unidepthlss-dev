@@ -1,0 +1,21 @@
+# @package data
+# The standard camera-only BEV segmentation window: 200 x 200 cells at 0.5 m = 100 x 100 m.
+#
+# THIS IS THE ONLY SETTING COMPARABLE TO THE PAPER'S TABLE 1. Every baseline quoted there (CVT,
+# LSS, BAEFormer, BEVFormer, GaussianLSS, Simple-BEV, PointBeV, GaussianBEV) reports Vehicle IoU
+# over this window -- it is the CVT/LSS "Setting 1" convention, and the same one the sibling
+# repos in this family use. See configs/data/bev/paper.yaml for what the release actually used.
+bev:
+  _target_: unidepthlss.geometry.BevGrid
+  h: 200            # rows, along longitudinal x
+  w: 200            # columns, along lateral y
+  h_meters: 100.0
+  w_meters: 100.0
+  z_min: -4.0       # the height band collapsed into BEV, unchanged from the release
+  z_max: 4.0
+  voxel_z: 8
+
+# Depth is clamped before back-projection, so this must reach the far edge of the window above
+# or the outer ring is structurally unreachable and reads as empty. 61.0 (not 50.0) matches the
+# value the sibling repos use for a 100 m window. See unidepthlss.geometry.required_depth_max.
+depth_max: 61.0
