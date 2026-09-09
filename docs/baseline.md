@@ -97,9 +97,28 @@ A retrain at `data/bev=standard`, which is the only way to get a number that bel
 table as the baselines:
 
 ```bash
-uv run tools/train.py data/bev=standard trainer.max_epochs=10   # matches the released ckpt's epoch count
+uv run tools/train.py data/bev=standard trainer.max_epochs=30
 uv run tools/eval.py checkpoint_path=outputs/train/<run>/checkpoints/best.ckpt 'grids=[standard]'
 ```
+
+**Use `max_epochs=30`, not 10**, even though the released checkpoint is from epoch 10.
+`max_epochs` sets `CosineAnnealingLR`'s `T_max`, so it changes the whole learning-rate
+trajectory, not just when training stops. The released checkpoint's saved optimizer LR is
+`0.00022525`, which matches `cosine(t=10, T_max=30)` to 1e-10; under `T_max=10` the LR at that
+point would already be fully annealed to `1e-6`. Training for 10 epochs is therefore *not* a
+truncation of the published schedule — it is a different one.
+
+### What the released checkpoint tells us about epoch count
+
+The paper states 30 epochs (§3.6). The checkpoint reports `epoch: 10`, carries 10 entries of
+training history, and its final logged `val_iou` is 0.4940 — the published number. Its val IoU was
+still climbing at that point (0.4878 → 0.4940).
+
+These are consistent: it is a best-on-validation checkpoint, so a 30-epoch run whose best epoch
+was 10 would save exactly this, with the history truncated at the moment of saving. What cannot be
+determined from the checkpoint alone is whether the run continued past epoch 10 — a save-best-only
+run that stopped at 10 and one that ran to 30 without improving are indistinguishable here. Either
+way, no epoch after the 10th beat 0.4940.
 
 Until that has run, the honest statement is "the published comparison is not like-for-like", not
 "the method scores X on the standard setting".
