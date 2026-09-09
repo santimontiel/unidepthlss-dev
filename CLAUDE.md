@@ -26,6 +26,7 @@ uv run tools/train.py trainer.devices=2           # Lightning spawns; no torchru
 uv run tools/eval.py checkpoint_path=<ckpt>       # scores BOTH windows in one pass
 uv run tools/download_checkpoints.py --all        # pretrained weights (see below)
 uv run tools/build_calibration_sidecar.py         # once, before using data.source=store
+uv run tools/build_calibration_sidecar.py --check # verify it covers every split
 uv run dev/analyze_run.py                         # post-hoc, no torch import
 ```
 
@@ -159,6 +160,15 @@ does not instantiate, so it will not catch this class of bug; `dev/check_instant
 found no unused parameters. Under `strict_freeze=false` the backbone's `pos_embed`/`cls_token`/
 `norm` are trainable but sit inside a `torch.no_grad()` block, so they genuinely never receive
 gradients — exactly the case plain `"ddp"` errors on. Keep it.
+
+**The Slurm scripts prepare their own prerequisites.** `train_slurm.sh` checks and builds the
+calibration sidecar before any arm starts (skipped for `SOURCE=devkit`), so a multi-day
+allocation cannot die minutes in on a missing 0.9 MB file;
+`deploy/slurm/build_sidecar_slurm.sh` is the same build as a standalone debug-partition job. Two
+details worth preserving if you touch that guard: the chosen path returns through a file rather
+than `$(srun ... | tail -1)` (which would make `$?` the exit status of `tail`, so a failed build
+would report success), and it falls back to the repo mount when the dataset mount is read-only,
+passing `data.calibration_sidecar=` through to training.
 
 **`num_workers` is coupled to `data.source`.** `store` (default) is fine at 8. `devkit` forks an
 ~8 GB in-memory index per worker — drop to 2 if you switch.

@@ -89,6 +89,11 @@ uv run tools/download_checkpoints.py --all   # pretrained weights
 uv run tools/build_calibration_sidecar.py    # only if using the fast data path (see Data)
 ```
 
+Both are idempotent and support `--check`. On the cluster neither is a required manual step:
+`deploy/slurm/train_slurm.sh` checks and builds the sidecar inline before any arm starts, and
+`deploy/slurm/build_sidecar_slurm.sh` runs the same build as its own short debug-partition job if
+you would rather not spend the first minutes of a multi-day allocation on it.
+
 ### Pretrained weights
 
 Two sets, and only one needs anything from you:
@@ -157,7 +162,9 @@ Two interchangeable sources, selected with `data.source`:
 - **`devkit`** — reads nuScenes live through `nuscenes-devkit`.
 
 `dev/check_dataset_parity.py` verifies that the two produce identical images, intrinsics,
-extrinsics, segmentation and visibility. The default is `store` purely for memory: the devkit forks an ~8 GB
+extrinsics, segmentation and visibility. The sidecar is checked (and built if missing) by
+`train_slurm.sh` before training starts; if the dataset mount is read-only it lands in the repo's
+`.cache/` instead and the path is passed through to training. The default is `store` purely for memory: the devkit forks an ~8 GB
 in-memory index into every dataloader worker, which caps `num_workers` at 2. **If you switch to
 `data.source=devkit`, drop `data.num_workers` to 2.**
 

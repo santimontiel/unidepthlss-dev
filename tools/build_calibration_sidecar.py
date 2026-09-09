@@ -1,7 +1,8 @@
 """Write the camera extrinsics the released code uses, so training never needs the devkit.
 
-    uv run tools/build_calibration_sidecar.py
-    uv run tools/build_calibration_sidecar.py --version v1.0-mini --split-file-prefix mini
+    uv run tools/build_calibration_sidecar.py            # build if absent
+    uv run tools/build_calibration_sidecar.py --check    # verify only, build nothing
+    uv run tools/build_calibration_sidecar.py --force    # rebuild in place
 
 The sibling repos' nuScenes store already carries this repo's labels, intrinsics and image paths
 bit-identically (proven by `dev/check_store_parity.py`), but *not* its extrinsics: the store
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import rootutils
@@ -37,6 +39,62 @@ from unidepthlss.data.dataset import CAMERA_NAMES  # noqa: E402
 SIDECAR_NAME = "unidepthlss_calibration.npz"
 
 
+class SidecarStatus(NamedTuple):
+    ok: bool
+    message: str
+
+
+def verify(out: Path, store_dir: Path) -> SidecarStatus:
+    """Check a sidecar without loading the devkit.
+
+    Deliberately validated against the *store's* split lists rather than by re-walking nuScenes:
+    the devkit costs ~8 GB and half a minute to open, which would make this guard too expensive
+    to run in front of every training job -- which is exactly where it earns its keep. When the
+    store is absent the coverage check is skipped rather than failed, since `data.source=devkit`
+    is a legitimate configuration that needs no store.
+    """
+    if not out.is_file():
+        return SidecarStatus(False, f"\u274c missing    {out}")
+
+    try:
+        sidecar = np.load(out, allow_pickle=False)
+        tokens = set(str(t) for t in sidecar["tokens"])
+        channels = [str(c) for c in sidecar["camera_channels"]]
+    except Exception as exc:  # noqa: BLE001 -- a corrupt or truncated file must read as "rebuild"
+        return SidecarStatus(False, f"\u274c unreadable {out} ({type(exc).__name__}: {exc})")
+
+    if tuple(channels) != tuple(CAMERA_NAMES):
+        return SidecarStatus(
+            False,
+            f"\u274c camera order {channels} != {list(CAMERA_NAMES)} in {out}",
+        )
+
+    splits_dir = store_dir / "splits"
+    if not splits_dir.is_dir():
+        return SidecarStatus(
+            True,
+            f"\u2705 sidecar    {out} ({len(tokens):,} samples)\n"
+            f"\u2139\ufe0f  no store at {store_dir}; coverage not checked "
+            f"(fine for data.source=devkit)",
+        )
+
+    missing_total = 0
+    for split_file in sorted(splits_dir.glob("*.txt")):
+        needed = set(split_file.read_text().split())
+        missing = needed - tokens
+        missing_total += len(missing)
+        if missing:
+            return SidecarStatus(
+                False,
+                f"\u274c {out} is missing {len(missing):,} of {len(needed):,} "
+                f"'{split_file.stem}' tokens (first: {sorted(missing)[0]})",
+            )
+
+    return SidecarStatus(
+        True, f"\u2705 sidecar    {out} ({len(tokens):,} samples, covers every split)"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataroot", default="/data/nuscenes")
@@ -46,10 +104,28 @@ def main() -> int:
         default=None,
         help=f"output npz (default: <dataroot>/{SIDECAR_NAME})",
     )
+    parser.add_argument("--check", action="store_true",
+                        help="verify an existing sidecar and exit; build nothing")
+    parser.add_argument("--force", action="store_true",
+                        help="rebuild even if a valid sidecar is already present")
+    parser.add_argument("--store-dir", default=None,
+                        help="store whose split lists the sidecar must cover "
+                             "(default: <dataroot>/store_det2d)")
     args = parser.parse_args()
 
     dataroot = Path(args.dataroot)
     out = Path(args.out) if args.out else dataroot / SIDECAR_NAME
+    store_dir = Path(args.store_dir) if args.store_dir else dataroot / "store_det2d"
+
+    status = verify(out, store_dir)
+    if args.check:
+        print(status.message)
+        return 0 if status.ok else 1
+    if status.ok and not args.force:
+        print(f"{status.message}\nNothing to do (pass --force to rebuild).")
+        return 0
+    if not status.ok:
+        print(f"{status.message}\nBuilding...")
 
     from nuscenes import NuScenes
     from pyquaternion import Quaternion

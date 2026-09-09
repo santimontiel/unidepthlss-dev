@@ -17,6 +17,12 @@
 #   SMOKE=1 sbatch deploy/slurm/train_slurm.sh              # both, a few batches each
 #   MAX_EPOCHS=10 sbatch deploy/slurm/train_slurm.sh        # shorter schedule (see the caveat)
 #   RESUME=/workspace/outputs/train/<run>/checkpoints/last.ckpt BEV_GRID=standard sbatch ...
+#   SOURCE=devkit sbatch deploy/slurm/train_slurm.sh        # no store/sidecar needed
+#
+# The calibration sidecar `data.source=store` needs is checked and built inline below, so no
+# separate step is required. `deploy/slurm/build_sidecar_slurm.sh` does the same build as its
+# own debug-partition job, which is worth using when you would rather not spend the first
+# minutes of a multi-day allocation on it.
 #
 # **Why two arms is the default.** The whole point of this repo is that the two windows are not
 # interchangeable: `paper` (128x128 over 64x64 m) reproduces the published 49.4 IoU, and
@@ -46,6 +52,13 @@ NUSCENES_DATA_ROOT="${NUSCENES_DATA_ROOT:-/raid/${USER}/Datasets/nuscenes}"
 # 1e-10 and not cosine(t=10, T_max=10), which would already be annealed to 1e-6. So training
 # "for 10 epochs" is a different experiment, not a shorter version of this one.
 MAX_EPOCHS=${MAX_EPOCHS:-30}
+
+# `store` (the default) reads the sibling repos' offline nuScenes store plus the calibration
+# sidecar built below; `devkit` reads nuScenes live and needs neither, at the cost of ~7.8 GB
+# of RAM per dataloader worker (so drop num_workers to 2 with it).
+SOURCE=${SOURCE:-store}
+NUM_WORKERS=${NUM_WORKERS:-8}
+if [ "${SOURCE}" = "devkit" ]; then NUM_WORKERS=${NUM_WORKERS_DEVKIT:-2}; fi
 
 # Which windows this job trains, and in what order. `BEV_GRID` names exactly one arm and is the
 # escape hatch from the two-arm default.
@@ -111,8 +124,58 @@ echo "UniDepth-LSS training sweep"
 echo "  Arms       : ${BEV_GRIDS}  (${ARM_COUNT})"
 echo "  Epochs     : ${MAX_EPOCHS} per arm"
 echo "  Devices    : ${DEVICES}"
+echo "  Data       : source=${SOURCE}, num_workers=${NUM_WORKERS}"
 echo "  Stamp      : ${STAMP}"
 echo "=================================================================="
+
+# Check-and-build the calibration sidecar ONCE, before any arm starts. A multi-day allocation
+# must not die minutes in on a missing 0.9 MB file, and building it here costs a few minutes
+# against a 3-day job. Skipped entirely for `SOURCE=devkit`, which needs no sidecar.
+SIDECAR_OVERRIDE=""
+if [ "${SOURCE}" = "store" ]; then
+  echo ""
+  echo "🔎 Checking the calibration sidecar..."
+  # The chosen path comes back through a file, not stdout: `$(srun ... | tail -1)` would make
+  # `$?` the exit status of `tail`, so a failed build would report success and the job would run
+  # for days against a sidecar that was never written.
+  PATH_FILE="${PATH_TO_SOURCE_CODE}/.cache/.sidecar_path"
+  rm -f "${PATH_FILE}"
+  srun --gpus=1 --container-image="$OUTPUT_SQSH" --container-mounts="$MOUNTS" \
+    bash -c '
+      set -e
+      cd /workspace
+      mkdir -p /workspace/.cache
+      SIDECAR="${SIDECAR:-}"
+      if [ -z "$SIDECAR" ]; then
+        # The dataset mount is often read-only on a cluster; fall back to the repo mount.
+        if touch /data/nuscenes/.unidepthlss_write_test 2>/dev/null; then
+          rm -f /data/nuscenes/.unidepthlss_write_test
+          SIDECAR=/data/nuscenes/unidepthlss_calibration.npz
+        else
+          SIDECAR=/workspace/.cache/unidepthlss_calibration.npz
+          echo "⚠️  /data/nuscenes is not writable -- using the repo mount instead."
+        fi
+      fi
+      if ! uv run --no-sync tools/build_calibration_sidecar.py \
+             --dataroot /data/nuscenes --out "$SIDECAR" --check; then
+        echo "🔄 Building the calibration sidecar..."
+        uv run --no-sync tools/build_calibration_sidecar.py \
+          --dataroot /data/nuscenes --out "$SIDECAR"
+      fi
+      # Written last, and only on success -- `set -e` means a failure above never reaches here,
+      # so the outer script sees a missing file rather than a stale path from a previous job.
+      echo "$SIDECAR" > /workspace/.cache/.sidecar_path
+    '
+  SIDECAR_STATUS=$?
+  SIDECAR_PATH=$(cat "${PATH_FILE}" 2>/dev/null)
+  if [ $SIDECAR_STATUS -ne 0 ] || [ -z "${SIDECAR_PATH}" ]; then
+    echo "❌ Could not prepare the calibration sidecar (exit ${SIDECAR_STATUS})."
+    echo "   Fix it, or submit with SOURCE=devkit to bypass the store entirely."
+    exit 1
+  fi
+  echo "✅ Sidecar ready: ${SIDECAR_PATH}"
+  SIDECAR_OVERRIDE="data.calibration_sidecar=${SIDECAR_PATH}"
+fi
 
 for GRID in ${BEV_GRIDS}; do
   ARM_INDEX=$((ARM_INDEX + 1))
@@ -127,7 +190,8 @@ for GRID in ${BEV_GRIDS}; do
   fi
 
   OVERRIDES="data/bev=${GRID} trainer.max_epochs=${MAX_EPOCHS} trainer.devices=${DEVICES}"
-  OVERRIDES="${OVERRIDES} run_id=${ARM_RUN_ID}"
+  OVERRIDES="${OVERRIDES} run_id=${ARM_RUN_ID} data.source=${SOURCE}"
+  OVERRIDES="${OVERRIDES} data.num_workers=${NUM_WORKERS} ${SIDECAR_OVERRIDE}"
 
   if [ -n "${SMOKE}" ]; then
     OVERRIDES="${OVERRIDES} trainer.limit_train_batches=20 trainer.limit_val_batches=10"
