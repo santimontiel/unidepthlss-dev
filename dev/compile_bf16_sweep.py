@@ -161,7 +161,9 @@ def instantiate_model(cfg: DictConfig) -> nn.Module:
     checkpoint_path = cfg.get("checkpoint_path", None)
     if checkpoint_path:
         from tools.eval import load_checkpoint_into
+        from unidepthlss.utils.checkpoints import ensure_checkpoint
 
+        checkpoint_path = str(ensure_checkpoint(checkpoint_path))
         load_checkpoint_into(model, checkpoint_path)
         log.info(f"loaded head weights from {checkpoint_path}")
     else:

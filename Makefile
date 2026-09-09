@@ -41,7 +41,7 @@ endif
 		exit 1; \
 	fi
 
-.PHONY: build run attach jupyter clear
+.PHONY: build run attach jupyter checkpoints clear
 build:
 	docker build deploy/docker -t $(IMAGE_NAME):$(TAG_NAME) --build-arg USER=$(USER_NAME) --build-arg UID=$(UID) --build-arg GID=$(GID)
 	@echo "\nBuild complete!"
@@ -57,6 +57,13 @@ attach:
 # BEV figures). Clear its outputs before saving -- they are megabytes of images.
 jupyter: check-env
 	$(call run_docker, "jupyter notebook")
+
+# Pretrained weights. The UniDepthV2 backbone is fetched from HuggingFace automatically on
+# first use; this pulls the released UniDepth-LSS head weights, which are a GitHub release asset
+# and so are not fetched implicitly. `--all` also pre-warms the backbone cache, worth doing
+# before submitting a cluster job so the first run does not stall on a 1.4 GB download.
+checkpoints:
+	$(call run_docker, "uv run tools/download_checkpoints.py --all")
 
 clear:
 	@rm -rf .cache/

@@ -82,11 +82,28 @@ make build
 make run                        # mounts $NUSCENES_DATA_ROOT at /data/nuscenes
 ```
 
-One-time, inside the container, if you intend to use the fast data path (see below):
+One-time, inside the container:
 
 ```bash
-uv run tools/build_calibration_sidecar.py
+uv run tools/download_checkpoints.py --all   # pretrained weights
+uv run tools/build_calibration_sidecar.py    # only if using the fast data path (see Data)
 ```
+
+### Pretrained weights
+
+Two sets, and only one needs anything from you:
+
+| | size | how |
+|---|---|---|
+| UniDepthV2 ViT-L backbone (frozen) | ~1.4 GB | **automatic** — pulled from HuggingFace on first model construction, cached under `$HF_HOME` |
+| UniDepth-LSS head weights (released v1.0) | 16.9 MB | `uv run tools/download_checkpoints.py` — a GitHub release asset, so nothing fetches it implicitly |
+
+The head weights are needed to **evaluate, benchmark or visualize** the published model, and are
+**not** needed to train from scratch. `tools/eval.py` fetches them automatically if
+`checkpoint_path` points at `checkpoints/UniDepthLSS.pt` and it is missing; any other missing path
+is treated as an error rather than silently substituted. The download is digest-pinned — every
+number in `docs/baseline.md` was measured against that exact file — and `--all` also pre-warms the
+backbone cache, which is worth doing before submitting a cluster job.
 
 ## Commands
 
@@ -102,6 +119,9 @@ uv run tools/train.py trainer.devices=2
 
 # evaluate a checkpoint under both windows at once
 uv run tools/eval.py checkpoint_path=/path/to/best.ckpt
+
+# fetch/verify pretrained weights (idempotent)
+uv run tools/download_checkpoints.py --check
 
 # inspect a finished run without importing torch
 uv run dev/analyze_run.py

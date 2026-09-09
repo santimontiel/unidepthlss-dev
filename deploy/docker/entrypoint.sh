@@ -39,6 +39,16 @@ else
     echo -e "\u2705 \033[92m\033[1mnuScenes dataset at\033[0m $NUSCENES_DATA_ROOT\033[92m\033[1m found!\033[0m"
 fi
 
+# Check the released checkpoint. Reported, not fetched: `make run` must not depend on the
+# network, and it is only needed to evaluate/benchmark the published model, never to train.
+RELEASE_CKPT="/workspace/checkpoints/UniDepthLSS.pt"
+if [ ! -f "$RELEASE_CKPT" ]; then
+    echo -e "\u2139\uFE0F  \033[93mReleased checkpoint not present.\033[0m Needed only for eval/benchmark:"
+    echo -e "   uv run tools/download_checkpoints.py"
+else
+    echo -e "\u2705 \033[92m\033[1mReleased checkpoint at\033[0m $RELEASE_CKPT\033[92m\033[1m found!\033[0m"
+fi
+
 # Check if CUDA is available
 echo -e "\n🔍 Checking GPU and CUDA availability..."
 if ! uv run --preview-features extra-build-dependencies python -c "import torch" 2>/dev/null; then

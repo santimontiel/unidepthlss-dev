@@ -24,6 +24,7 @@ uv run tools/train.py                             # 200x200 @ 100 m (comparable 
 uv run tools/train.py data/bev=paper              # 128x128 @ 64 m (the release's window)
 uv run tools/train.py trainer.devices=2           # Lightning spawns; no torchrun
 uv run tools/eval.py checkpoint_path=<ckpt>       # scores BOTH windows in one pass
+uv run tools/download_checkpoints.py --all        # pretrained weights (see below)
 uv run tools/build_calibration_sidecar.py         # once, before using data.source=store
 uv run dev/analyze_run.py                         # post-hoc, no torch import
 ```
@@ -38,6 +39,23 @@ uv run dev/capture_forward_reference.py --check docs/forward_reference.json
 uv run dev/check_store_parity.py           # store vs devkit labels
 uv run dev/check_dataset_parity.py         # full sample-level parity
 ```
+
+## Pretrained weights
+
+The **UniDepthV2 backbone is automatic** — `UniDepthV2.from_pretrained` pulls it from the HF hub
+at model construction and caches it under `$HF_HOME`. Only the **released UniDepth-LSS head
+weights** (16.9 MB, a GitHub release asset) need fetching, and only for eval/benchmark/visualize,
+never for training from scratch.
+
+`unidepthlss/utils/checkpoints.py` pins the artifact's sha256, because `docs/baseline.md`'s
+numbers are claims about that specific file rather than about whatever currently sits at the URL;
+a mismatch is a hard error. Downloads land via a temp file in the same directory and are renamed
+only after the digest checks out, so an interrupted transfer cannot leave something that later
+looks like a valid checkpoint.
+
+`ensure_checkpoint()` auto-downloads **only** for the canonical release path. A missing path
+anywhere else is one of your own runs, and substituting the authors' weights there would produce
+a complete run reporting numbers for the wrong model — so it raises instead.
 
 ## Architecture
 

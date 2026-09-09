@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 
 from tools.train import apply_compile, resolve_compile_stages  # noqa: E402
 from unidepthlss.metrics import IoUMetric  # noqa: E402
+from unidepthlss.utils.checkpoints import ensure_checkpoint  # noqa: E402
 from unidepthlss.utils.config import register_new_resolvers, set_seed  # noqa: E402
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs"
@@ -110,7 +111,10 @@ def evaluate_one(cfg: DictConfig, grid_name: str, device: torch.device) -> dict:
     loader = datamodule.val_dataloader()
 
     model = hydra.utils.instantiate(run_cfg.module.model)
-    info = load_checkpoint_into(model, cfg.checkpoint_path)
+    # Fetches the released v1.0 weights if -- and only if -- that is the file that is missing.
+    # Any other path is one of the user's own runs and must fail rather than be substituted.
+    checkpoint_path = ensure_checkpoint(cfg.checkpoint_path)
+    info = load_checkpoint_into(model, str(checkpoint_path))
     model = model.to(device).eval()
 
     # AFTER the checkpoint load, never before: torch.compile wraps a module in OptimizedModule and
